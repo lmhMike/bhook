@@ -451,6 +451,19 @@ static void bh_hook_manager_hook_impl(bh_hook_manager_t *self, bh_task_t *task, 
         return;
     }
 
+    // do callback with BYTEHOOK_STATUS_CODE_ORIG_ADDR for manual-mode
+    //
+    // In manual mode, the caller needs to save the original function address
+    // in the hooked callback, and then may call the original function through
+    // this address in the proxy function. So we need to execute the hooked callback
+    // first, and then execute the address replacement in the GOT, otherwise it
+    // will cause a crash due to timing issues.
+    if(BYTEHOOK_MODE_MANUAL == bh_core_get_mode())
+    {
+        void *orig_func_real = *((void **)(addr_array[0]));
+        bh_task_hooked(task, BYTEHOOK_STATUS_CODE_ORIG_ADDR, caller_elf->pathname, orig_func_real);
+    }
+
     // hook
     bool everything_ok = true;
     void *orig_func = NULL;
@@ -471,11 +484,15 @@ static void bh_hook_manager_hook_impl(bh_hook_manager_t *self, bh_task_t *task, 
 static void bh_hook_manager_cfi_slowpath(uint64_t CallSiteTypeId, void* Ptr)
 {
     (void)CallSiteTypeId, (void)Ptr;
+
+    BYTEHOOK_POP_STACK();
 }
 
 static void bh_hook_manager_cfi_slowpath_diag(uint64_t CallSiteTypeId, void* Ptr, void* DiagData)
 {
     (void)CallSiteTypeId, (void)Ptr, (void)DiagData;
+
+    BYTEHOOK_POP_STACK();
 }
 
 static void bh_hook_manager_cfi_hooked(bytehook_stub_t task_stub, int status_code, const char *caller_path_name, const char *sym_name, void *new_func, void *prev_func, void *arg)
